@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+const { init } = require('./db');
 const authRoutes = require('./routes/auth');
 const tripRoutes = require('./routes/trips');
 
@@ -23,6 +24,13 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Trip planner API http://localhost:${PORT}`);
-});
+init()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Trip planner API http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Veritabanı başlatılamadı', err);
+    process.exit(1);
+  });
