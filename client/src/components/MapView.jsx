@@ -1,108 +1,129 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { GoogleMap, Marker, Autocomplete, useJsApiLoader } from '@react-google-maps/api';
+import React, { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 
-const LIBRARIES = ['places'];
 const DEFAULT_CENTER = { lat: 41.0082, lng: 28.9784 }; // Istanbul
-
 const MARKER_COLORS = ['#2f6fed', '#e0523f', '#1c8b4c', '#c9a227', '#8a4fd6', '#0fb5ae'];
 
+function dayIcon(dayNumber) {
+  const color = MARKER_COLORS[((dayNumber || 1) - 1) % MARKER_COLORS.length];
+  return L.divIcon({
+    className: 'trip-marker-wrapper',
+    html: \`<div class="trip-marker" style="background:\${color}">\${dayNumber || ''}</div>\`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+  });
+}
+
+function ClickHandler({ editable, onPick }) {
+  useMapEvents({
+    click(e) {
+      if (editable && onPick) onPick(e.latlng.lat, e.latlng.lng, '');
+    },
+  });
+  return null;
+}
+
+function FlyTo({ target }) {
+  const map = useMap();
+  useEffect(() => {
+    if (target) map.flyTo([target.lat, target.lng], 13);
+  }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
 /**
- * Reusable Google Map.
+ * Reusable OpenStreetMap (Leaflet) map. No API key required.
  * - markers: [{ lat, lng, label, dayNumber }]
- * - onPick(lat, lng, label): called when user clicks the map or picks a place (editable mode only)
+ * - onPick(lat, lng, label): called when the user clicks the map or picks a search result (editable mode only)
  * - editable: whether clicking/searching is allowed
  */
 export default function MapView({ markers = [], center, onPick, editable = false, height = 360 }) {
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-  const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: apiKey || '',
-    libraries: LIBRARIES,
-  });
-  const [autocomplete, setAutocomplete] = useState(null);
-  const mapRef = useRef(null);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [flyTarget, setFlyTarget] = useState(null);
 
-  const onMapClick = useCallback(
-    (e) => {
-      if (!editable || !onPick) return;
-      const lat = e.latLng.lat();
-      const lng = e.latLng.lng();
-      onPick(lat, lng, '');
-    },
-    [editable, onPick]
-  );
+  const mapCenter = center || (markers[0] ? { lat: markers[0].lat, lng: markers[0].lng } : DEFAULT_CENTER);
 
-  const onPlaceChanged = () => {
-    if (!autocomplete) return;
-    const place = autocomplete.getPlace();
-    if (!place.geometry) return;
-    const lat = place.geometry.location.lat();
-    const lng = place.geometry.location.lng();
-    onPick && onPick(lat, lng, place.formatted_address || place.name || '');
-    if (mapRef.current) {
-      mapRef.current.panTo({ lat, lng });
-      mapRef.current.setZoom(13);
+  const runSearch = async (e) => {
+    e.preventDefault();
+    if (!query.trim()) return;
+    setSearching(true);
+    try {
+      const res = await fetch(
+        \`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=\${encodeURIComponent(query)}\`
+      );
+      const data = await res.json();
+      setResults(data);
+    } catch (err) {
+      setResults([]);
+    } finally {
+      setSearching(false);
     }
   };
 
-  if (!apiKey) {
-    return (
-      <div className="map-box" style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, textAlign: 'center', color: '#6b7280' }}>
-        Google Maps API anahtarı ayarlanmamış. <br />
-        <code>client/.env</code> dosyasına <code>VITE_GOOGLE_MAPS_API_KEY</code> ekleyin.
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return <div className="map-box" style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Harita yüklenemedi.</div>;
-  }
-
-  if (!isLoaded) {
-    return <div className="map-box" style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Harita yükleniyor...</div>;
-  }
-
-  const mapCenter = center || (markers[0] ? { lat: markers[0].lat, lng: markers[0].lng } : DEFAULT_CENTER);
+  const pickResult = (r) => {
+    const lat = parseFloat(r.lat);
+    const lng = parseFloat(r.lon);
+    onPick && onPick(lat, lng, r.display_name);
+    setFlyTarget({ lat, lng });
+    setResults([]);
+    setQuery(r.display_name);
+  };
 
   return (
     <div>
       {editable && (
-        <div style={{ marginBottom: 10 }}>
-          <Autocomplete onLoad={setAutocomplete} onPlaceChanged={onPlaceChanged}>
-            <input placeholder="Konum ara (otel, şehir, mekan adı...)" />
-          </Autocomplete>
-        </div>
+        <form onSubmit={runSearch} style={{ marginBottom: 10, position: 'relative' }}>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Konum ara (şehir, mekan adı...) ve Enter'a bas"
+          />
+          {searching && <p style={{ fontSize: 12, color: '#6b7280', margin: '4px 0 0' }}>Aranıyor...</p>}
+          {results.length > 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                zIndex: 1000,
+                background: 'white',
+                border: '1px solid #e3e6ee',
+                borderRadius: 8,
+                marginTop: 4,
+                width: '100%',
+                maxHeight: 220,
+                overflowY: 'auto',
+                boxShadow: '0 6px 16px rgba(0,0,0,0.08)',
+              }}
+            >
+              {results.map((r) => (
+                <div
+                  key={r.place_id}
+                  onClick={() => pickResult(r)}
+                  style={{ padding: '8px 10px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #f0f2f8' }}
+                >
+                  {r.display_name}
+                </div>
+              ))}
+            </div>
+          )}
+        </form>
       )}
       <div className="map-box" style={{ height }}>
-        <GoogleMap
-          onLoad={(map) => (mapRef.current = map)}
-          mapContainerStyle={{ width: '100%', height: '100%' }}
-          center={mapCenter}
-          zoom={markers.length ? 12 : 6}
-          onClick={onMapClick}
-          options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
-        >
+        <MapContainer center={[mapCenter.lat, mapCenter.lng]} zoom={markers.length ? 12 : 6} style={{ width: '100%', height: '100%' }}>
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> katkıda bulunanlar'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <ClickHandler editable={editable} onPick={onPick} />
+          <FlyTo target={flyTarget} />
           {markers.map((m, idx) => (
-            <Marker
-              key={idx}
-              position={{ lat: m.lat, lng: m.lng }}
-              label={{
-                text: m.dayNumber ? String(m.dayNumber) : '',
-                color: 'white',
-                fontSize: '11px',
-                fontWeight: '700',
-              }}
-              title={m.label}
-              icon={{
-                path: window.google.maps.SymbolPath.CIRCLE,
-                scale: 12,
-                fillColor: MARKER_COLORS[(m.dayNumber - 1) % MARKER_COLORS.length] || '#2f6fed',
-                fillOpacity: 1,
-                strokeColor: 'white',
-                strokeWeight: 2,
-              }}
-            />
+            <Marker key={idx} position={[m.lat, m.lng]} icon={dayIcon(m.dayNumber)}>
+              {m.label && <Popup>{m.label}</Popup>}
+            </Marker>
           ))}
-        </GoogleMap>
+        </MapContainer>
       </div>
       {editable && <p style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>Haritaya tıklayarak da konum seçebilirsiniz.</p>}
     </div>
