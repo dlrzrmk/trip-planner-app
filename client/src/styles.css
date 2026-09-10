@@ -174,3 +174,20 @@ label { font-size: 13px; font-weight: 600; color: var(--text-muted); display: bl
   display: flex; align-items: center; justify-content: center; z-index: 50;
 }
 .modal { background: white; border-radius: var(--radius); padding: 24px; width: 100%; max-width: 420px; }
+
+
+.trip-marker-wrapper { background: transparent; border: none; }
+.trip-marker {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+}
+.leaflet-container { font-family: inherit; }
