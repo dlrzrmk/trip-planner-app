@@ -9,7 +9,7 @@ function dayIcon(dayNumber) {
   const color = MARKER_COLORS[((dayNumber || 1) - 1) % MARKER_COLORS.length];
   return L.divIcon({
     className: 'trip-marker-wrapper',
-    html: \`<div class="trip-marker" style="background:\${color}">\${dayNumber || ''}</div>\`,
+    html: '<div class="trip-marker" style="background:' + color + '">' + (dayNumber || '') + '</div>',
     iconSize: [26, 26],
     iconAnchor: [13, 13],
   });
@@ -52,7 +52,7 @@ export default function MapView({ markers = [], center, onPick, editable = false
     setSearching(true);
     try {
       const res = await fetch(
-        \`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=\${encodeURIComponent(query)}\`
+        'https://nominatim.openstreetmap.org/search?format=json&limit=5&q=' + encodeURIComponent(query)
       );
       const data = await res.json();
       setResults(data);
