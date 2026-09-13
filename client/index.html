@@ -2,11 +2,30 @@
 <html lang="tr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Seyahat Planlayıcı</title>
+
+    <meta name="description" content="Rota, gün gün plan ve bütçe takibiyle tatil planlama uygulaması." />
+    <meta name="theme-color" content="#2f6fed" />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABEklEQVR4nO2XMRaCMAyG0z5PIBM7uxzGe8jmGdzkHh5GdnYmuYJOedYQSNK+lsV/o2D/708xjzhgdLq83tx6qoa+cnTtZyGX8RaIL21OvXxpcwrhpQdzy+2RPtTuFfgDZAd43o+b9w+5Tdtuzg8gpcwCwJmOE0BTf6+l9CYAKeU4aXcyAGhLi+bW9AsA61m23QyPa/z5A5C/oZZaMrfss+gD0o/bbmbNw/JbZGpEmmSW9KsAdBNMjUo9dxEghKAwnDmW35p+E0Brnir1OyCZx6RXA+RIbgI439bTNXV8ejWABJEiUx/gIFLSAwB4blzSQsR2P9TQVy7qkwwhUtMDBLNh6fkAK+/pQklzADIdo0qO5x+OeGoI+tUrBAAAAABJRU5ErkJggg==" />
+    <link rel="apple-touch-icon" href="data:image/png;base64,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" />
+
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Seyahat" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>
