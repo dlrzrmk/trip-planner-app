@@ -85,12 +85,37 @@ function ShareModal({ tripId, members, onClose, onChanged }) {
   );
 }
 
+function DeleteTripModal({ onCancel, onConfirm, busy, error }) {
+  return (
+    <div className="modal-backdrop" onClick={busy ? undefined : onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ marginTop: 0 }}>Planı sil</h3>
+        <p style={{ color: '#6b7280' }}>
+          Bu planı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+        </p>
+        {error && <div className="error-text">{error}</div>}
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button className="btn secondary" style={{ flex: 1 }} onClick={onCancel} disabled={busy}>
+            Vazgeç
+          </button>
+          <button className="btn danger" style={{ flex: 1 }} onClick={onConfirm} disabled={busy}>
+            {busy ? 'Siliniyor...' : 'Evet, sil'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TripView() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [trip, setTrip] = useState(null);
   const [activeDay, setActiveDay] = useState(1);
   const [showShare, setShowShare] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const load = async () => {
     const { data } = await api.get(`/trips/${id}`);
@@ -117,9 +142,15 @@ export default function TripView() {
   };
 
   const deleteTrip = async () => {
-    if (!confirm('Bu planı silmek istediğinize emin misiniz?')) return;
-    await api.delete(`/trips/${id}`);
-    navigate('/');
+    setDeleteBusy(true);
+    setDeleteError('');
+    try {
+      await api.delete(`/trips/${id}`);
+      navigate('/');
+    } catch (err) {
+      setDeleteError(err.response?.data?.error || 'Plan silinemedi, lütfen tekrar deneyin.');
+      setDeleteBusy(false);
+    }
   };
 
   return (
@@ -149,7 +180,7 @@ export default function TripView() {
             </button>
           )}
           {isOwner && (
-            <button className="btn danger" onClick={deleteTrip}>
+            <button className="btn danger" onClick={() => setShowDeleteConfirm(true)}>
               Sil
             </button>
           )}
@@ -242,6 +273,18 @@ export default function TripView() {
 
       {showShare && (
         <ShareModal tripId={id} members={trip.members || []} onClose={() => setShowShare(false)} onChanged={load} />
+      )}
+
+      {showDeleteConfirm && (
+        <DeleteTripModal
+          busy={deleteBusy}
+          error={deleteError}
+          onCancel={() => {
+            setShowDeleteConfirm(false);
+            setDeleteError('');
+          }}
+          onConfirm={deleteTrip}
+        />
       )}
     </div>
   );
