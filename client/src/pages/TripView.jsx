@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../api';
 import MapView from '../components/MapView.jsx';
+import { bookingSearchUrl, getYourGuideSearchUrl } from '../affiliateConfig';
 
 function ShareModal({ tripId, members, onClose, onChanged }) {
   const [email, setEmail] = useState('');
@@ -184,6 +185,33 @@ export default function TripView() {
           )}
         </div>
       </div>
+
+      {trip.destination_label && (
+        <div className="card" style={{ marginTop: 20 }}>
+          <h4 style={{ marginTop: 0 }}>Rezervasyon önerileri</h4>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: '#6b7280' }}>
+            {trip.destination_label} için otel, uçak ve tur seçeneklerine göz atın.
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <a
+              className="btn secondary"
+              href={bookingSearchUrl(trip.destination_label)}
+              target="_blank"
+              rel="noopener noreferrer sponsored"
+            >
+              🏨 Otel bul
+            </a>
+            <a
+              className="btn secondary"
+              href={getYourGuideSearchUrl(trip.destination_label)}
+              target="_blank"
+              rel="noopener noreferrer sponsored"
+            >
+              🎟️ Tur &amp; aktivite bul
+            </a>
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: 20 }}>
         <h4 style={{ marginTop: 0 }}>Gün gün program</h4>
