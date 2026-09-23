@@ -12,7 +12,10 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
   .map((s) => s.trim());
 
 app.use(cors({ origin: allowedOrigins, credentials: true }));
-app.use(express.json());
+// Higher limit than the default 100kb: memory photos arrive as base64 data
+// URIs in the JSON body (client-side resized to ~1600px before upload, but
+// base64 still inflates the raw byte size by ~33%).
+app.use(express.json({ limit: '12mb' }));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 app.use('/api/auth', authRoutes);
