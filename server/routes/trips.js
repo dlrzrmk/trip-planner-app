@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuid } = require('uuid');
 const { client } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { uploadImage, deleteImage } = require('../utils/cloudinary');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -30,6 +31,17 @@ async function loadFullTrip(tripId) {
     sql: 'SELECT * FROM trip_items WHERE trip_id = ? ORDER BY day_number ASC, sort_order ASC, created_at ASC',
     args: [tripId],
   });
+  const photosRes = await client.execute({
+    sql: `SELECT p.* FROM trip_item_photos p
+          JOIN trip_items ti ON ti.id = p.trip_item_id
+          WHERE ti.trip_id = ?
+          ORDER BY p.sort_order ASC, p.created_at ASC`,
+    args: [tripId],
+  });
+  const photosByItem = {};
+  for (const p of photosRes.rows) {
+    (photosByItem[p.trip_item_id] ||= []).push(p);
+  }
   const membersRes = await client.execute({
     sql: `SELECT tm.id, tm.invited_email as email, tm.role, u.name as user_name, tm.user_id
           FROM trip_members tm LEFT JOIN users u ON u.id = tm.user_id
@@ -37,7 +49,11 @@ async function loadFullTrip(tripId) {
     args: [tripId],
   });
   const ownerRes = await client.execute({ sql: 'SELECT id, name, email FROM users WHERE id = ?', args: [trip.owner_id] });
-  const items = itemsRes.rows;
+  const items = itemsRes.rows.map((it) => ({
+    ...it,
+    is_favorite: !!it.is_favorite,
+    photos: photosByItem[it.id] || [],
+  }));
   const totalCost = items.reduce((sum, it) => sum + (Number(it.cost) || 0), 0);
   return { ...trip, items, members: membersRes.rows, owner: ownerRes.rows[0], total_cost: totalCost };
 }
@@ -171,6 +187,12 @@ router.delete('/:id', async (req, res) => {
 });
 
 // --- replace all day items in one go (used by the day-by-day editor) ------
+//
+// This upserts rather than blanket delete+insert: an item whose id already
+// exists in the trip is UPDATEd in place (so its photos and memory note,
+// which reference trip_items.id via ON DELETE CASCADE, survive re-saving
+// the plan), a new item is INSERTed, and only items that were actually
+// removed by the user are deleted.
 
 router.put('/:id/items', async (req, res) => {
   try {
@@ -179,28 +201,161 @@ router.put('/:id/items', async (req, res) => {
     if (role === 'viewer') return res.status(403).json({ error: 'Bu planı düzenleme yetkiniz yok.' });
 
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
-    const statements = [
-      { sql: 'DELETE FROM trip_items WHERE trip_id = ?', args: [req.params.id] },
-      ...items.map((it, idx) => ({
-        sql: `INSERT INTO trip_items (id, trip_id, day_number, title, time, cost, lat, lng, location_label, notes, sort_order)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          it.id || uuid(),
-          req.params.id,
-          Math.max(1, parseInt(it.day_number, 10) || 1),
-          (it.title || '').trim() || 'Etkinlik',
-          it.time || null,
-          Number(it.cost) || 0,
-          it.lat ?? null,
-          it.lng ?? null,
-          it.location_label ?? null,
-          it.notes ?? null,
-          idx,
-        ],
-      })),
-      { sql: "UPDATE trips SET updated_at = datetime('now') WHERE id = ?", args: [req.params.id] },
-    ];
+    const existingRes = await client.execute({ sql: 'SELECT id FROM trip_items WHERE trip_id = ?', args: [req.params.id] });
+    const existingIds = new Set(existingRes.rows.map((r) => r.id));
+    const incomingIds = new Set();
+
+    const statements = [];
+    items.forEach((it, idx) => {
+      // Locally-created rows use a client-side placeholder id (e.g. "local-...")
+      // until they're persisted for the first time; give those a real uuid.
+      const id = it.id && existingIds.has(it.id) ? it.id : uuid();
+      incomingIds.add(id);
+      if (existingIds.has(id)) {
+        statements.push({
+          sql: `UPDATE trip_items SET
+                  day_number = ?, title = ?, time = ?, cost = ?, lat = ?, lng = ?,
+                  location_label = ?, notes = ?, sort_order = ?
+                WHERE id = ?`,
+          args: [
+            Math.max(1, parseInt(it.day_number, 10) || 1),
+            (it.title || '').trim() || 'Etkinlik',
+            it.time || null,
+            Number(it.cost) || 0,
+            it.lat ?? null,
+            it.lng ?? null,
+            it.location_label ?? null,
+            it.notes ?? null,
+            idx,
+            id,
+          ],
+        });
+      } else {
+        statements.push({
+          sql: `INSERT INTO trip_items (id, trip_id, day_number, title, time, cost, lat, lng, location_label, notes, sort_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            id,
+            req.params.id,
+            Math.max(1, parseInt(it.day_number, 10) || 1),
+            (it.title || '').trim() || 'Etkinlik',
+            it.time || null,
+            Number(it.cost) || 0,
+            it.lat ?? null,
+            it.lng ?? null,
+            it.location_label ?? null,
+            it.notes ?? null,
+            idx,
+          ],
+        });
+      }
+    });
+
+    const toDelete = [...existingIds].filter((id) => !incomingIds.has(id));
+    if (toDelete.length) {
+      statements.push({
+        sql: `DELETE FROM trip_items WHERE id IN (${toDelete.map(() => '?').join(',')})`,
+        args: toDelete,
+      });
+    }
+    statements.push({ sql: "UPDATE trips SET updated_at = datetime('now') WHERE id = ?", args: [req.params.id] });
+
     await client.batch(statements, 'write');
+    res.json(await loadFullTrip(req.params.id));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Sunucu hatası oluştu.' });
+  }
+});
+
+// --- memories: favorite flag + short personal note on a day item ----------
+
+router.put('/:id/items/:itemId/memory', async (req, res) => {
+  try {
+    const { role } = await getAccess(req.params.id, req.user.id, req.user.email);
+    if (!role) return res.status(404).json({ error: 'Plan bulunamadı ya da erişiminiz yok.' });
+    if (role === 'viewer') return res.status(403).json({ error: 'Bu planı düzenleme yetkiniz yok.' });
+
+    const itemRes = await client.execute({
+      sql: 'SELECT id FROM trip_items WHERE id = ? AND trip_id = ?',
+      args: [req.params.itemId, req.params.id],
+    });
+    if (!itemRes.rows[0]) return res.status(404).json({ error: 'Etkinlik bulunamadı.' });
+
+    const { is_favorite, memory_note } = req.body || {};
+    await client.execute({
+      sql: 'UPDATE trip_items SET is_favorite = ?, memory_note = ? WHERE id = ?',
+      args: [is_favorite ? 1 : 0, (memory_note ?? '').trim() || null, req.params.itemId],
+    });
+    res.json(await loadFullTrip(req.params.id));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Sunucu hatası oluştu.' });
+  }
+});
+
+// --- memories: photos on a day item ----------------------------------------
+
+router.post('/:id/items/:itemId/photos', async (req, res) => {
+  try {
+    const { role } = await getAccess(req.params.id, req.user.id, req.user.email);
+    if (!role) return res.status(404).json({ error: 'Plan bulunamadı ya da erişiminiz yok.' });
+    if (role === 'viewer') return res.status(403).json({ error: 'Bu planı düzenleme yetkiniz yok.' });
+
+    const itemRes = await client.execute({
+      sql: 'SELECT id FROM trip_items WHERE id = ? AND trip_id = ?',
+      args: [req.params.itemId, req.params.id],
+    });
+    if (!itemRes.rows[0]) return res.status(404).json({ error: 'Etkinlik bulunamadı.' });
+
+    const { dataUri, caption } = req.body || {};
+    if (!dataUri || !String(dataUri).startsWith('data:image/')) {
+      return res.status(400).json({ error: 'Geçerli bir fotoğraf gerekli.' });
+    }
+
+    let uploaded;
+    try {
+      uploaded = await uploadImage(dataUri, `voyago/${req.params.id}`);
+    } catch (uploadErr) {
+      console.error('Fotoğraf yüklenemedi:', uploadErr);
+      return res.status(502).json({ error: 'Fotoğraf yüklenemedi, lütfen tekrar deneyin.' });
+    }
+
+    const countRes = await client.execute({
+      sql: 'SELECT COUNT(*) as n FROM trip_item_photos WHERE trip_item_id = ?',
+      args: [req.params.itemId],
+    });
+    const id = uuid();
+    await client.execute({
+      sql: `INSERT INTO trip_item_photos (id, trip_item_id, url, public_id, caption, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [id, req.params.itemId, uploaded.url, uploaded.public_id, (caption || '').trim() || null, countRes.rows[0].n],
+    });
+    res.status(201).json(await loadFullTrip(req.params.id));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Sunucu hatası oluştu.' });
+  }
+});
+
+router.delete('/:id/items/:itemId/photos/:photoId', async (req, res) => {
+  try {
+    const { role } = await getAccess(req.params.id, req.user.id, req.user.email);
+    if (!role) return res.status(404).json({ error: 'Plan bulunamadı ya da erişiminiz yok.' });
+    if (role === 'viewer') return res.status(403).json({ error: 'Bu planı düzenleme yetkiniz yok.' });
+
+    const photoRes = await client.execute({
+      sql: `SELECT p.* FROM trip_item_photos p
+            JOIN trip_items ti ON ti.id = p.trip_item_id
+            WHERE p.id = ? AND p.trip_item_id = ? AND ti.trip_id = ?`,
+      args: [req.params.photoId, req.params.itemId, req.params.id],
+    });
+    const photo = photoRes.rows[0];
+    if (!photo) return res.status(404).json({ error: 'Fotoğraf bulunamadı.' });
+
+    await client.execute({ sql: 'DELETE FROM trip_item_photos WHERE id = ?', args: [photo.id] });
+    deleteImage(photo.public_id); // best-effort, don't block the response on Cloudinary
+
     res.json(await loadFullTrip(req.params.id));
   } catch (err) {
     console.error(err);
