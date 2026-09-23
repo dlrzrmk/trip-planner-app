@@ -2,14 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../api';
 import MapView from '../components/MapView.jsx';
+import { useLang } from '../i18n/LanguageContext.jsx';
 
 const CURRENCIES = ['TRY', 'USD', 'EUR', 'GBP'];
 const emptyDraft = { title: '', time: '', cost: '', notes: '', lat: null, lng: null, location_label: '' };
+const LOCALE_MAP = { tr: 'tr-TR', en: 'en-US', de: 'de-DE' };
 
 export default function TripEditor() {
   const { id } = useParams();
   const isNew = !id;
   const navigate = useNavigate();
+  const { t, lang } = useLang();
 
   const [name, setName] = useState('');
   const [totalDays, setTotalDays] = useState(3);
@@ -43,7 +46,7 @@ export default function TripEditor() {
 
   const addItem = () => {
     if (!draft.title.trim()) {
-      setError('Etkinlik başlığı girin.');
+      setError(t('tripEditor.itemTitleRequired'));
       return;
     }
     setError('');
@@ -66,7 +69,7 @@ export default function TripEditor() {
 
   const save = async () => {
     if (!name.trim()) {
-      setError('Plan adı girin.');
+      setError(t('tripEditor.nameRequired'));
       return;
     }
     setSaving(true);
@@ -90,13 +93,13 @@ export default function TripEditor() {
       await api.put(`/trips/${tripId}/items`, { items });
       navigate(`/trips/${tripId}`);
     } catch (err) {
-      setError(err.response?.data?.error || 'Kaydedilemedi.');
+      setError(err.response?.data?.error || t('tripEditor.saveFailed'));
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="container">Yükleniyor...</div>;
+  if (loading) return <div className="container">{t('common.loading')}</div>;
 
   const mapMarkers = items
     .filter((it) => it.lat && it.lng)
@@ -104,18 +107,18 @@ export default function TripEditor() {
 
   return (
     <div className="container">
-      <h2>{isNew ? 'Yeni tatil planı' : 'Planı düzenle'}</h2>
-      {!canEdit && <p className="error-text">Bu planı sadece görüntüleyebilirsiniz, düzenleme yetkiniz yok.</p>}
+      <h2>{isNew ? t('tripEditor.newTitle') : t('tripEditor.editTitle')}</h2>
+      {!canEdit && <p className="error-text">{t('tripEditor.viewOnlyNotice')}</p>}
 
       <div className="two-col">
         <div className="card">
           <div className="field">
-            <label>Plan adı</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canEdit} placeholder="Örn. Yaz Tatili - Kaş" />
+            <label>{t('tripEditor.name')}</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canEdit} placeholder={t('tripEditor.namePlaceholder')} />
           </div>
           <div className="field" style={{ display: 'flex', gap: 12 }}>
             <div style={{ flex: 1 }}>
-              <label>Toplam gün</label>
+              <label>{t('tripEditor.totalDays')}</label>
               <input
                 type="number"
                 min={1}
@@ -125,7 +128,7 @@ export default function TripEditor() {
               />
             </div>
             <div style={{ flex: 1 }}>
-              <label>Para birimi</label>
+              <label>{t('tripEditor.currency')}</label>
               <select value={currency} disabled={!canEdit} onChange={(e) => setCurrency(e.target.value)}>
                 {CURRENCIES.map((c) => (
                   <option key={c} value={c}>
@@ -137,7 +140,7 @@ export default function TripEditor() {
           </div>
 
           <div className="field">
-            <label>Genel konum (ör. gidilecek şehir/bölge)</label>
+            <label>{t('tripEditor.location')}</label>
             <MapView
               editable={canEdit}
               center={destination.lat ? { lat: destination.lat, lng: destination.lng } : undefined}
@@ -150,16 +153,16 @@ export default function TripEditor() {
         </div>
 
         <div className="card">
-          <h4 style={{ marginTop: 0 }}>Gün gün plan</h4>
+          <h4 style={{ marginTop: 0 }}>{t('tripEditor.dayPlan')}</h4>
           <div className="day-tabs">
             {Array.from({ length: totalDays }, (_, i) => i + 1).map((d) => (
               <div key={d} className={`day-tab ${activeDay === d ? 'active' : ''}`} onClick={() => setActiveDay(d)}>
-                Gün {d}
+                {t('common.day')} {d}
               </div>
             ))}
           </div>
 
-          {dayItems.length === 0 && <p style={{ color: '#6b7280', fontSize: 14 }}>Bu gün için henüz etkinlik eklenmedi.</p>}
+          {dayItems.length === 0 && <p style={{ color: '#6b7280', fontSize: 14 }}>{t('tripEditor.noItemsForDay')}</p>}
 
           {dayItems.map((it) => (
             <div className="item-row" key={it.id}>
@@ -169,11 +172,11 @@ export default function TripEditor() {
                 {it.notes && <div style={{ fontSize: 12, color: '#6b7280' }}>{it.notes}</div>}
               </div>
               <div>{it.time || '-'}</div>
-              <div>{Number(it.cost).toLocaleString('tr-TR')} {currency}</div>
+              <div>{Number(it.cost).toLocaleString(LOCALE_MAP[lang] || 'en-US')} {currency}</div>
               <div />
               {canEdit && (
                 <button className="btn danger small" onClick={() => removeItem(it.id)}>
-                  Sil
+                  {t('common.delete')}
                 </button>
               )}
             </div>
@@ -181,32 +184,32 @@ export default function TripEditor() {
 
           {canEdit && (
             <div style={{ marginTop: 18, borderTop: '1px solid #e3e6ee', paddingTop: 16 }}>
-              <h5 style={{ margin: '0 0 10px' }}>Gün {activeDay} için etkinlik ekle</h5>
+              <h5 style={{ margin: '0 0 10px' }}>{t('tripEditor.addItemForDay', activeDay)}</h5>
               <div className="field">
-                <label>Başlık</label>
-                <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Örn. Kaleiçi turu" />
+                <label>{t('tripEditor.itemTitle')}</label>
+                <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder={t('tripEditor.itemTitlePlaceholder')} />
               </div>
               <div className="field" style={{ display: 'flex', gap: 12 }}>
                 <div style={{ flex: 1 }}>
-                  <label>Saat</label>
+                  <label>{t('tripEditor.itemTime')}</label>
                   <input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label>Ücret ({currency})</label>
+                  <label>{t('tripEditor.itemCostLabel', currency)}</label>
                   <input type="number" min={0} value={draft.cost} onChange={(e) => setDraft({ ...draft, cost: e.target.value })} />
                 </div>
               </div>
               <div className="field">
-                <label>Not (opsiyonel)</label>
+                <label>{t('tripEditor.notesOptional')}</label>
                 <input value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
               </div>
               <div className="field">
-                <label>Konum</label>
+                <label>{t('tripEditor.itemLocation')}</label>
                 <MapView editable markers={draft.lat ? [{ lat: draft.lat, lng: draft.lng, label: draft.location_label, dayNumber: activeDay }] : []} onPick={onItemLocationPick} height={220} />
                 {draft.location_label && <p style={{ fontSize: 13, marginTop: 6 }}>📍 {draft.location_label}</p>}
               </div>
               <button className="btn secondary" onClick={addItem} type="button">
-                + Etkinliği ekle
+                + {t('tripEditor.addItem')}
               </button>
             </div>
           )}
@@ -218,11 +221,11 @@ export default function TripEditor() {
       <div style={{ marginTop: 20, display: 'flex', gap: 10 }}>
         {canEdit && (
           <button className="btn" onClick={save} disabled={saving}>
-            {saving ? 'Kaydediliyor...' : 'Planı kaydet'}
+            {saving ? t('tripEditor.saving') : t('tripEditor.saveTrip')}
           </button>
         )}
         <button className="btn secondary" onClick={() => navigate(-1)}>
-          İptal
+          {t('tripEditor.cancelNav')}
         </button>
       </div>
     </div>
