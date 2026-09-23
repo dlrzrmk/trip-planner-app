@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import { useLang } from '../i18n/LanguageContext.jsx';
 
 const DEFAULT_CENTER = { lat: 41.0082, lng: 28.9784 }; // Istanbul
 const MARKER_COLORS = ['#2f6fed', '#e0523f', '#1c8b4c', '#c9a227', '#8a4fd6', '#0fb5ae'];
@@ -39,6 +40,7 @@ function FlyTo({ target }) {
  * - editable: whether clicking/searching is allowed
  */
 export default function MapView({ markers = [], center, onPick, editable = false, height = 360 }) {
+  const { t } = useLang();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -79,9 +81,9 @@ export default function MapView({ markers = [], center, onPick, editable = false
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Konum ara (şehir, mekan adı...) ve Enter'a bas"
+            placeholder={t('map.searchPlaceholder')}
           />
-          {searching && <p style={{ fontSize: 12, color: '#6b7280', margin: '4px 0 0' }}>Aranıyor...</p>}
+          {searching && <p style={{ fontSize: 12, color: '#6b7280', margin: '4px 0 0' }}>{t('map.searching')}</p>}
           {results.length > 0 && (
             <div
               style={{
@@ -125,7 +127,7 @@ export default function MapView({ markers = [], center, onPick, editable = false
           ))}
         </MapContainer>
       </div>
-      {editable && <p style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>Haritaya tıklayarak da konum seçebilirsiniz.</p>}
+      {editable && <p style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>{t('map.clickHint')}</p>}
     </div>
   );
 }
