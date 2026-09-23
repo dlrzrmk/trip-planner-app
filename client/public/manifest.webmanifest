@@ -1,13 +1,13 @@
 {
-  "name": "Seyahat Planlayıcı",
-  "short_name": "Seyahat",
-  "description": "Rota, gün gün plan ve bütçe takibiyle tatil planlama uygulaması.",
+  "name": "Voyago",
+  "short_name": "Voyago",
+  "description": "Voyago — plan your trips day by day, track your budget, and travel smarter.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f6f7fb",
   "theme_color": "#2f6fed",
-  "lang": "tr",
+  "lang": "en",
   "dir": "ltr",
   "orientation": "portrait-primary",
   "icons": [
